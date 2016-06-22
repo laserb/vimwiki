@@ -769,6 +769,14 @@ function! s:close_tag_table(table, ldest, header_ids) "{{{
   return table
 endfunction "}}}
 
+function! s:close_tag_section(id, ldest) "{{{
+  for i in a:id
+    if i[1] != 0
+      call add(a:ldest, "</section>")
+    endif
+  endfor
+endfunction "}}}
+
 function! s:close_tag_list(lists, ldest) "{{{
   while len(a:lists)
     let item = remove(a:lists, 0)
@@ -1008,12 +1016,17 @@ function! s:process_tag_h(line, id) "{{{
   let line = a:line
   let processed = 0
   let h_level = 0
+  let sec_part = ''
   let h_text = ''
   let h_id = ''
 
   if a:line =~# g:vimwiki_rxHeader
     let h_level = vimwiki#u#count_first_sym(a:line)
   endif
+  if a:id[h_level-1][1] != 0
+    let sec_part = '</section>'
+  endif
+
   if h_level > 0
 
     let h_text = vimwiki#u#trim(matchstr(line, g:vimwiki_rxHeader))
@@ -1022,14 +1035,16 @@ function! s:process_tag_h(line, id) "{{{
     let h_id = s:safe_html_anchor(h_text)
     let centered = (a:line =~# '^\s')
 
+    " reset higher level ids
+    for level in range(h_level, 5)
+      if a:id[level][1] != 0
+        let sec_part .= '</section>'
+      endif
+      let a:id[level] = ['', 0]
+    endfor
+
     if h_text !=# g:vimwiki_toc_header
-
       let a:id[h_level-1] = [h_text, a:id[h_level-1][1]+1]
-
-      " reset higher level ids
-      for level in range(h_level, 5)
-        let a:id[level] = ['', 0]
-      endfor
 
       for l in range(h_level-1)
         let h_number .= a:id[l][1].'.'
@@ -1049,14 +1064,21 @@ function! s:process_tag_h(line, id) "{{{
         let h_text = num.' '.h_text
       endif
       let h_complete_id = s:safe_html_anchor(h_complete_id)
-      let h_part = '<div id="'.h_complete_id.'"><h'.h_level.' id="'.h_id.'"'
+      let h_part = '<h'.h_level.' id="'.h_id.'"'
+      let section_class=VimwikiGet('section_class')
+      let h_id = h_complete_id
 
     else
-
-      let h_part = '<div id="'.h_id.'" class="toc"><h1 id="'.h_id.'"'
-
+      let a:id[0] = ['toc', a:id[0][1]+1]
+      let h_part = '<h1'
+      let section_class ='toc'
     endif
 
+    if section_class == ''
+      let sec_part .= '<section id="'.h_id.'"">'
+    else
+      let sec_part .= '<section id="'.h_id.'" class="'.section_class.'">'
+    endif
 
     if centered
       let h_part .= ' class="justcenter">'
@@ -1066,7 +1088,7 @@ function! s:process_tag_h(line, id) "{{{
 
     let h_text = s:process_inline_tags(h_text, a:id)
 
-    let line = h_part.h_text.'</h'.h_level.'></div>'
+    let line = sec_part.h_part.h_text.'</h'.h_level.'>'
 
     let processed = 1
   endif
@@ -1489,6 +1511,7 @@ function! s:convert_file(path_html, wikifile) "{{{
     call s:close_tag_list(state.lists, lines)
     call s:close_tag_def_list(state.deflist, lines)
     call s:close_tag_table(state.table, lines, state.header_ids)
+    call s:close_tag_section(state.header_ids, lines)
     call extend(ldest, lines)
 
     let title = s:process_title(placeholders, fnamemodify(a:wikifile, ":t:r"))
